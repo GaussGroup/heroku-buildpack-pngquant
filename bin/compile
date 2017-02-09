@@ -1,0 +1,53 @@
+#!/bin/sh
+set -e
+
+indent() {
+  sed -u 's/^/       /'
+}
+
+arrow() {
+  sed -u 's/^/-----> /'
+}
+
+# Check for and clear pngquant binaries created by the Apt buildpack
+if [ -e /app/.apt/usr/bin/pngquant ]; then
+  echo "Clearing apt-installed pngquant" | indent
+  rm /app/.apt/usr/bin/pngquant
+fi
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+VENDOR_DIR="vendor"
+PNGQUANT_DOWNLOAD_URL="https://github.com/pornel/pngquant/archive/2.7.2.tar.gz"
+PNGQUANT_CACHE_DIR="$CACHE_DIR/pngquant-cache"
+
+if [ -x "$PNGQUANT_CACHE_DIR/pngquant" ]; then
+  echo "Using cached pngquant binary" | arrow
+  mkdir -p $BUILD_DIR/$VENDOR_DIR/pngquant/bin
+  cp $PNGQUANT_CACHE_DIR/pngquant $BUILD_DIR/$VENDOR_DIR/pngquant/bin
+else
+  echo "Building pngquant from source" | arrow
+  echo "PNGQUANT_DOWNLOAD_URL = " $PNGQUANT_DOWNLOAD_URL | indent
+
+  cd $BUILD_DIR
+  curl -L --silent $PNGQUANT_DOWNLOAD_URL | tar -xzv | indent
+  cd pngquant-2.7.2
+  ./configure | indent
+  make | indent
+  chmod +x pngquant
+
+  mkdir -p $BUILD_DIR/$VENDOR_DIR/pngquant/bin
+  cp pngquant $BUILD_DIR/$VENDOR_DIR/pngquant/bin/pngquant
+
+  # Store binary in cache to speedup future builds
+  mkdir -p $PNGQUANT_CACHE_DIR
+  cp pngquant $PNGQUANT_CACHE_DIR
+fi
+
+echo "Testing pngquant binary" | arrow
+$BUILD_DIR/$VENDOR_DIR/pngquant/bin/pngquant -h | indent
+
+echo "Modifying PATH" | arrow
+PROFILE_PATH="$BUILD_DIR/.profile.d/pngquant.sh"
+mkdir -p $(dirname $PROFILE_PATH)
+echo 'export PATH="$PATH:/app/vendor/pngquant/bin"' >> $PROFILE_PATH
